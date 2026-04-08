@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Movie Explorer</title>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial;
+            background: #111;
+            color: white;
+        }
+
+        header {
+            padding: 20px;
+            text-align: center;
+            background: #000;
+        }
+
+        input {
+            padding: 10px;
+            width: 300px;
+            border-radius: 5px;
+            border: none;
+        }
+
+        button {
+            padding: 10px 15px;
+            margin-left: 10px;
+            background: red;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .movie-info {
+            text-align: center;
+            margin: 20px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+            padding: 20px;
+        }
+
+        .card {
+            background: #222;
+            padding: 10px;
+            border-radius: 12px;
+            text-align: center;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .card:hover {
+            transform: scale(1.05);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+
+        .card img {
+            width: 100%;
+            aspect-ratio: 2/3;   /* FIXED SIZE */
+            object-fit: cover;
+            border-radius: 10px;
+        }
+
+        .card p {
+            margin-top: 10px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+
+<header>
+    <h1>🎬 Movie Explorer</h1>
+    <input type="text" id="movieName" placeholder="Search movie...">
+    <button onclick="searchMovie()">Search</button>
+</header>
+
+<div class="movie-info" id="details">
+    <h2>🔍 Search for a movie</h2>
+    <p>Enter a movie name to see details and posters</p>
+</div>
+<div class="grid" id="posters"></div>
+
+<script>
+
+// 🔍 Search movie
+async function searchMovie() {
+    const name = document.getElementById("movieName").value;
+
+    const res = await fetch(`/movie?name=${name}`);
+    const data = await res.json();
+
+    if (data.message) {
+        document.getElementById("details").innerHTML = "❌ Movie not found";
+        document.getElementById("posters").innerHTML = "";
+        return;
+    }
+
+    displayMovie(data);
+}
+
+// 🎬 Display movie
+function displayMovie(data) {
+    document.getElementById("details").innerHTML = `
+        <h2>${data.title}</h2>
+        <p>${data.description}</p>
+
+        <p><b>🎬 Director:</b> ${data.director}</p>
+        <p><b>🎭 Cast:</b> ${data.cast}</p>
+        <p><b>🎞 Genre:</b> ${data.genre}</p>
+        <p><b>⏱ Duration:</b> ${data.duration}</p>
+
+        <p><b>📅 Year:</b> ${data.release_year} | ⭐ ${data.rating}</p>
+    `;
+
+    let postersHTML = "";
+
+    data.posters.forEach(p => {
+        postersHTML += `
+            <div class="card">
+                <img src="${p}">
+                <p>${data.title}</p>
+            </div>
+        `;
+    });
+
+    document.getElementById("posters").innerHTML = postersHTML;
+}
+</script>
+
+</body>
+</html>
