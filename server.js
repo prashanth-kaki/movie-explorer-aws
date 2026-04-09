@@ -67,19 +67,27 @@ app.get('/movie', async (req, res) => {
             );
 
             return res.json({
-                ...movie,
+                id: movie.id,
+                title: movie.title,
+                description: movie.description,
+                release_year: movie.release_year,
+                rating: movie.rating,
+                director: movie.director,
+                cast: movie.cast,
+                genre: movie.genre,
+                duration: movie.duration,
                 posters: posterRows.map(p => p.poster_url)
             });
         }
 
-        // 2️⃣ Try fetching directly from OMDb using title
+        // 2️⃣ Try exact title search from OMDb
         let apiResponse = await axios.get(
             `http://www.omdbapi.com/?t=${encodeURIComponent(name)}&apikey=${OMDB_API_KEY}`
         );
 
         let data = apiResponse.data;
 
-        // 3️⃣ If not found, perform a broader search
+        // 3️⃣ If exact match fails, perform a broader search
         if (data.Response === "False") {
             const searchResponse = await axios.get(
                 `http://www.omdbapi.com/?s=${encodeURIComponent(name)}&apikey=${OMDB_API_KEY}`
@@ -88,7 +96,6 @@ app.get('/movie', async (req, res) => {
             if (searchResponse.data.Response === "True") {
                 const imdbID = searchResponse.data.Search[0].imdbID;
 
-                // Fetch full details using IMDb ID
                 const detailResponse = await axios.get(
                     `http://www.omdbapi.com/?i=${imdbID}&apikey=${OMDB_API_KEY}`
                 );
@@ -124,7 +131,7 @@ app.get('/movie', async (req, res) => {
 
         const movieId = insertResult.insertId;
 
-        // 6️⃣ Insert poster into posters table
+        // 6️⃣ Insert poster URL into posters table
         if (s3PosterUrl) {
             await db.promise().query(
                 "INSERT INTO posters (movie_id, poster_url) VALUES (?, ?)",
@@ -132,7 +139,7 @@ app.get('/movie', async (req, res) => {
             );
         }
 
-        // 7️⃣ Send response to frontend
+        // 7️⃣ Send response
         res.status(201).json({
             id: movieId,
             title: data.Title,
