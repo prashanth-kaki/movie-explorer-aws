@@ -7,7 +7,7 @@
     <style>
         body {
             margin: 0;
-            font-family: Arial;
+            font-family: Arial, sans-serif;
             background: #111;
             color: white;
         }
@@ -16,6 +16,20 @@
             padding: 20px;
             text-align: center;
             background: #000;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .logo {
+            width: 40px;
+            height: 40px;
+            object-fit: contain;
         }
 
         input {
@@ -42,9 +56,10 @@
 
         .grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            grid-template-columns: repeat(4, 1fr); /* Always 4 posters */
             gap: 20px;
             padding: 20px;
+            justify-items: center;
         }
 
         .card {
@@ -52,6 +67,7 @@
             padding: 10px;
             border-radius: 12px;
             text-align: center;
+            width: 220px;
             transition: transform 0.3s, box-shadow 0.3s;
         }
 
@@ -62,7 +78,7 @@
 
         .card img {
             width: 100%;
-            aspect-ratio: 2/3;   /* FIXED SIZE */
+            height: 320px;
             object-fit: cover;
             border-radius: 10px;
         }
@@ -71,18 +87,17 @@
             margin-top: 10px;
             font-size: 14px;
         }
-        .header {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            margin-bottom: 20px;
+
+        @media (max-width: 900px) {
+            .grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
         }
-        
-        .logo {
-            width: 40px;
-            height: 40px;
-            object-fit: contain;
+
+        @media (max-width: 500px) {
+            .grid {
+                grid-template-columns: repeat(1, 1fr);
+            }
         }
     </style>
 </head>
@@ -102,12 +117,12 @@
     <h2>Search for a movie</h2>
     <p>Enter a movie name to see details and posters</p>
 </div>
+
 <div class="grid" id="posters"></div>
 
 <script>
-
 async function searchMovie() {
-    const movieName = document.getElementById('searchInput').value;
+    const movieName = document.getElementById('movieName').value.trim();
 
     if (!movieName) {
         alert("Please enter a movie name");
@@ -118,13 +133,15 @@ async function searchMovie() {
         const response = await fetch(`/movie?name=${encodeURIComponent(movieName)}`);
         const movie = await response.json();
 
-        if (movie.message) {
-            document.getElementById('movieDetails').innerHTML =
-                `<p>${movie.message}</p>`;
+        if (!response.ok) {
+            document.getElementById('details').innerHTML =
+                `<p>${movie.message || "Movie not found"}</p>`;
+            document.getElementById('posters').innerHTML = "";
             return;
         }
 
-        document.getElementById('movieDetails').innerHTML = `
+        // Display movie details
+        document.getElementById('details').innerHTML = `
             <h2>${movie.title}</h2>
             <p>${movie.description}</p>
             <p>🎬 <strong>Director:</strong> ${movie.director}</p>
@@ -132,13 +149,21 @@ async function searchMovie() {
             <p>🏷️ <strong>Genre:</strong> ${movie.genre}</p>
             <p>⏱️ <strong>Duration:</strong> ${movie.duration}</p>
             <p>📅 <strong>Year:</strong> ${movie.release_year} | ⭐ ${movie.rating}</p>
-            <div class="poster-grid">
-                ${movie.posters.map(url => `<img src="${url}" alt="Poster">`).join('')}
-            </div>
         `;
+
+        // Display posters (up to 4)
+        const postersHTML = movie.posters.slice(0, 4).map(url => `
+            <div class="card">
+                <img src="${url}" alt="${movie.title} Poster">
+            </div>
+        `).join('');
+
+        document.getElementById('posters').innerHTML =
+            postersHTML || "<p>No posters available</p>";
+
     } catch (error) {
-        console.error('Error fetching movie:', error);
-        document.getElementById('movieDetails').innerHTML =
+        console.error("Error fetching movie:", error);
+        document.getElementById('details').innerHTML =
             `<p>Error fetching movie details.</p>`;
     }
 }
