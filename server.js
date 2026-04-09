@@ -9,7 +9,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(__dirname));
 
-// ✅ RDS Connection Pool (credentials kept in code as requested)
+// ✅ RDS Connection Pool
 const db = mysql.createPool({
     host: 'moviedb.cmpmaac422xa.us-east-1.rds.amazonaws.com',
     user: 'admin',
@@ -19,15 +19,13 @@ const db = mysql.createPool({
     connectionLimit: 10
 });
 
-// ✅ AWS S3 Configuration
-const s3 = new S3Client({
-    region: 'us-east-1' // Uses IAM role if running on EC2
-});
+// ✅ AWS S3 Configuration (uses IAM Role on EC2)
+const s3 = new S3Client({ region: 'us-east-1' });
 
 const BUCKET_NAME = 'movie-posters-bucket-aws';
-const OMDB_API_KEY = 'aefa5fe4'; // Replace with your actual API key
+const OMDB_API_KEY = 'YOUR_ACTIVATED_API_KEY'; // Replace with your valid key
 
-// Utility function to upload poster to S3
+// ✅ Upload poster to S3
 async function uploadPosterToS3(posterUrl, title) {
     const response = await axios.get(posterUrl, {
         responseType: 'arraybuffer'
@@ -45,7 +43,7 @@ async function uploadPosterToS3(posterUrl, title) {
     return `https://${BUCKET_NAME}.s3.us-east-1.amazonaws.com/${fileName}`;
 }
 
-// 🎬 Dynamic Movie Search Endpoint
+// 🎬 Movie Search Endpoint
 app.get('/movie', async (req, res) => {
     const name = req.query.name;
 
@@ -55,22 +53,23 @@ app.get('/movie', async (req, res) => {
 
     try {
         // 1️⃣ Check if movie exists in RDS
-        const [rows] = await db.promise().query(
-            `SELECT m.*, p.poster_url
-             FROM movies m
-             LEFT JOIN posters p ON m.id = p.movie_id
-             WHERE m.title LIKE ?`,
+        const [movieRows] = await db.promise().query(
+            "SELECT * FROM movies WHERE title LIKE ? LIMIT 1",
             [`%${name}%`]
         );
 
-        if (rows.length > 0) {
-            const movie = {
-                ...rows[0],
-                posters: rows
-                    .filter(r => r.poster_url)
-                    .map(r => r.poster_url)
-            };
-            return res.json(movie);
+        if (movieRows.length > 0) {
+            const movie = movieRows[0];
+
+            const [posterRows] = await db.promise().query(
+                "SELECT poster_url FROM posters WHERE movie_id = ? LIMIT 4",
+                [movie.id]
+            );
+
+            return res.json({
+                ...movie,
+                posters: posterRows.map(p => p.poster_url)
+            });
         }
 
         // 2️⃣ Fetch movie from OMDb API
@@ -81,7 +80,7 @@ app.get('/movie', async (req, res) => {
         const data = apiResponse.data;
 
         if (data.Response === "False") {
-            return res.status(404).json({ message: "Movie not found anywhere" });
+            return res.status(404).json({ message: "Movie not found" });
         }
 
         // 3️⃣ Upload poster to S3
@@ -92,8 +91,9 @@ app.get('/movie', async (req, res) => {
 
         // 4️⃣ Insert movie into database
         const [insertResult] = await db.promise().query(
-            `INSERT INTO movies (title, description, release_year, rating, director, cast, genre, duration)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO movies 
+            (title, description, release_year, rating, director, \`cast\`, genre, duration)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 data.Title,
                 data.Plot,
@@ -111,7 +111,7 @@ app.get('/movie', async (req, res) => {
         // 5️⃣ Insert poster URL
         if (s3PosterUrl) {
             await db.promise().query(
-                `INSERT INTO posters (movie_id, poster_url) VALUES (?, ?)`,
+                "INSERT INTO posters (movie_id, poster_url) VALUES (?, ?)",
                 [movieId, s3PosterUrl]
             );
         }
@@ -131,12 +131,13 @@ app.get('/movie', async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Error:", error);
+        console.error("Detailed Error:", error.response?.data || error.message);
         res.status(500).json({ error: "Internal server error" });
     }
 });
 
 // 🚀 Start Server
-app.listen(3000, () => {
-    console.log("Server running on port 3000");
+const PORT = 3000;
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
 });
