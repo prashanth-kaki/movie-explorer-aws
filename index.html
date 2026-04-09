@@ -71,13 +71,29 @@
             margin-top: 10px;
             font-size: 14px;
         }
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .logo {
+            width: 40px;
+            height: 40px;
+            object-fit: contain;
+        }
     </style>
 </head>
 
 <body>
 
 <header>
-    <h1>🎬 Movie Explorer</h1>
+    <div class="header">
+        <img src="logo.png" alt="logo" class="logo">
+        <h1>Movie Explorer</h1>
+    </div>
     <input type="text" id="movieName" placeholder="Search movie...">
     <button onclick="searchMovie()">Search</button>
 </header>
