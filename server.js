@@ -54,7 +54,7 @@ app.get('/movie', async (req, res) => {
     try {
         // 1️⃣ Check if movie exists in RDS
         const [movieRows] = await db.promise().query(
-            "SELECT * FROM movies WHERE title LIKE ? LIMIT 1",
+            "SELECT * FROM movies WHERE LOWER(title) LIKE LOWER(?) LIMIT 1",
             [`%${name}%`]
         );
 
@@ -72,24 +72,40 @@ app.get('/movie', async (req, res) => {
             });
         }
 
-        // 2️⃣ Fetch movie from OMDb API
-        const apiResponse = await axios.get(
+        // 2️⃣ Try fetching directly from OMDb using title
+        let apiResponse = await axios.get(
             `http://www.omdbapi.com/?t=${encodeURIComponent(name)}&apikey=${OMDB_API_KEY}`
         );
 
-        const data = apiResponse.data;
+        let data = apiResponse.data;
 
+        // 3️⃣ If not found, perform a broader search
         if (data.Response === "False") {
-            return res.status(404).json({ message: "Movie not found" });
+            const searchResponse = await axios.get(
+                `http://www.omdbapi.com/?s=${encodeURIComponent(name)}&apikey=${OMDB_API_KEY}`
+            );
+
+            if (searchResponse.data.Response === "True") {
+                const imdbID = searchResponse.data.Search[0].imdbID;
+
+                // Fetch full details using IMDb ID
+                const detailResponse = await axios.get(
+                    `http://www.omdbapi.com/?i=${imdbID}&apikey=${OMDB_API_KEY}`
+                );
+
+                data = detailResponse.data;
+            } else {
+                return res.status(404).json({ message: "Movie not found" });
+            }
         }
 
-        // 3️⃣ Upload poster to S3
+        // 4️⃣ Upload poster to S3
         let s3PosterUrl = null;
         if (data.Poster && data.Poster !== "N/A") {
             s3PosterUrl = await uploadPosterToS3(data.Poster, data.Title);
         }
 
-        // 4️⃣ Insert movie into database
+        // 5️⃣ Insert movie into database
         const [insertResult] = await db.promise().query(
             `INSERT INTO movies 
             (title, description, release_year, rating, director, \`cast\`, genre, duration)
@@ -108,7 +124,7 @@ app.get('/movie', async (req, res) => {
 
         const movieId = insertResult.insertId;
 
-        // 5️⃣ Insert poster URL
+        // 6️⃣ Insert poster into posters table
         if (s3PosterUrl) {
             await db.promise().query(
                 "INSERT INTO posters (movie_id, poster_url) VALUES (?, ?)",
@@ -116,7 +132,7 @@ app.get('/movie', async (req, res) => {
             );
         }
 
-        // 6️⃣ Send response
+        // 7️⃣ Send response to frontend
         res.status(201).json({
             id: movieId,
             title: data.Title,
