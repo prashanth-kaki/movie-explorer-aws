@@ -25,7 +25,7 @@ const s3 = new S3Client({
 });
 
 const BUCKET_NAME = 'movie-posters-bucket-aws';
-const OMDB_API_KEY = 'http://www.omdbapi.com/?i=tt3896198&apikey=aefa5fe4'; // Replace with your actual API key
+const OMDB_API_KEY = 'aefa5fe4'; // Replace with your actual API key
 
 // Utility function to upload poster to S3
 async function uploadPosterToS3(posterUrl, title) {
