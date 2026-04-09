@@ -107,45 +107,40 @@
 <script>
 
 async function searchMovie() {
-    const name = document.getElementById("movieName").value;
+    const movieName = document.getElementById('searchInput').value;
 
-    const res = await fetch(`/movie?name=${name}`);
-    const data = await res.json();
-
-    if (data.message) {
-        document.getElementById("details").innerHTML = "Movie not found";
-        document.getElementById("posters").innerHTML = "";
+    if (!movieName) {
+        alert("Please enter a movie name");
         return;
     }
 
-    displayMovie(data);
-}
+    try {
+        const response = await fetch(`/movie?name=${encodeURIComponent(movieName)}`);
+        const movie = await response.json();
 
-function displayMovie(data) {
-    document.getElementById("details").innerHTML = `
-        <h2>${data.title}</h2>
-        <p>${data.description}</p>
+        if (movie.message) {
+            document.getElementById('movieDetails').innerHTML =
+                `<p>${movie.message}</p>`;
+            return;
+        }
 
-        <p><b>🎬 Director:</b> ${data.director}</p>
-        <p><b>🎭 Cast:</b> ${data.cast}</p>
-        <p><b>🎞 Genre:</b> ${data.genre}</p>
-        <p><b>⏱ Duration:</b> ${data.duration}</p>
-
-        <p><b>📅 Year:</b> ${data.release_year} | ⭐ ${data.rating}</p>
-    `;
-
-    let postersHTML = "";
-
-    data.posters.forEach(p => {
-        postersHTML += `
-            <div class="card">
-                <img src="${p}">
-                <p>${data.title}</p>
+        document.getElementById('movieDetails').innerHTML = `
+            <h2>${movie.title}</h2>
+            <p>${movie.description}</p>
+            <p>🎬 <strong>Director:</strong> ${movie.director}</p>
+            <p>🎭 <strong>Cast:</strong> ${movie.cast}</p>
+            <p>🏷️ <strong>Genre:</strong> ${movie.genre}</p>
+            <p>⏱️ <strong>Duration:</strong> ${movie.duration}</p>
+            <p>📅 <strong>Year:</strong> ${movie.release_year} | ⭐ ${movie.rating}</p>
+            <div class="poster-grid">
+                ${movie.posters.map(url => `<img src="${url}" alt="Poster">`).join('')}
             </div>
         `;
-    });
-
-    document.getElementById("posters").innerHTML = postersHTML;
+    } catch (error) {
+        console.error('Error fetching movie:', error);
+        document.getElementById('movieDetails').innerHTML =
+            `<p>Error fetching movie details.</p>`;
+    }
 }
 </script>
 
