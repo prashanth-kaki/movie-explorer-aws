@@ -56,7 +56,7 @@
 
         .grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr); /* Always 4 posters */
+            grid-template-columns: repeat(4, 1fr);
             gap: 20px;
             padding: 20px;
             justify-items: center;
@@ -81,11 +81,6 @@
             height: 320px;
             object-fit: cover;
             border-radius: 10px;
-        }
-
-        .card p {
-            margin-top: 10px;
-            font-size: 14px;
         }
 
         @media (max-width: 900px) {
@@ -129,44 +124,75 @@ async function searchMovie() {
         return;
     }
 
+    const detailsDiv = document.getElementById('details');
+    const postersDiv = document.getElementById('posters');
+
+    // Show loading state
+    detailsDiv.innerHTML = "<h2>Loading...</h2>";
+    postersDiv.innerHTML = "";
+
     try {
         const response = await fetch(`/movie?name=${encodeURIComponent(movieName)}`);
-        const movie = await response.json();
 
-        if (!response.ok) {
-            document.getElementById('details').innerHTML =
-                `<p>${movie.message || "Movie not found"}</p>`;
-            document.getElementById('posters').innerHTML = "";
+        let movie;
+        try {
+            movie = await response.json();
+        } catch {
+            throw new Error("Invalid server response");
+        }
+
+        // Handle movie not found or server errors
+        if (!response.ok || !movie || !movie.title) {
+            detailsDiv.innerHTML = `
+                <h2>Movie Not Found</h2>
+                <p>${movie?.message || "The requested movie is not available."}</p>
+            `;
+            postersDiv.innerHTML = "";
             return;
         }
 
         // Display movie details
-        document.getElementById('details').innerHTML = `
+        detailsDiv.innerHTML = `
             <h2>${movie.title}</h2>
-            <p>${movie.description}</p>
-            <p>🎬 <strong>Director:</strong> ${movie.director}</p>
-            <p>🎭 <strong>Cast:</strong> ${movie.cast}</p>
-            <p>🏷️ <strong>Genre:</strong> ${movie.genre}</p>
-            <p>⏱️ <strong>Duration:</strong> ${movie.duration}</p>
-            <p>📅 <strong>Year:</strong> ${movie.release_year} | ⭐ ${movie.rating}</p>
+            <p>${movie.description || "No description available."}</p>
+            <p>🎬 <strong>Director:</strong> ${movie.director || "N/A"}</p>
+            <p>🎭 <strong>Cast:</strong> ${movie.cast || "N/A"}</p>
+            <p>🏷️ <strong>Genre:</strong> ${movie.genre || "N/A"}</p>
+            <p>⏱️ <strong>Duration:</strong> ${movie.duration || "N/A"}</p>
+            <p>📅 <strong>Year:</strong> ${movie.release_year || "N/A"} | ⭐ ${movie.rating || "N/A"}</p>
         `;
 
-        // Display posters (up to 4)
-        const postersHTML = movie.posters.slice(0, 4).map(url => `
+        // Display posters
+        const posters = Array.isArray(movie.posters) ? movie.posters.slice(0, 4) : [];
+
+        if (posters.length === 0) {
+            postersDiv.innerHTML = "<p>No posters available</p>";
+            return;
+        }
+
+        postersDiv.innerHTML = posters.map(url => `
             <div class="card">
-                <img src="${url}" alt="${movie.title} Poster">
+                <img src="${url}" alt="${movie.title} Poster"
+                     onerror="this.src='https://via.placeholder.com/220x320?text=No+Image';">
             </div>
         `).join('');
 
-        document.getElementById('posters').innerHTML =
-            postersHTML || "<p>No posters available</p>";
-
     } catch (error) {
         console.error("Error fetching movie:", error);
-        document.getElementById('details').innerHTML =
-            `<p>Error fetching movie details.</p>`;
+        detailsDiv.innerHTML = `
+            <h2>Error</h2>
+            <p>Unable to fetch movie details. Please try again later.</p>
+        `;
+        postersDiv.innerHTML = "";
     }
 }
+
+// Allow search using the Enter key
+document.getElementById('movieName').addEventListener('keypress', function(event) {
+    if (event.key === 'Enter') {
+        searchMovie();
+    }
+});
 </script>
 
 </body>
