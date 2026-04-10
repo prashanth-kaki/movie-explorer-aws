@@ -24,7 +24,7 @@ const db = mysql.createPool({
 /* =========================
    ✅ TMDb API CONFIG
    ========================= */
-const TMDB_API_KEY = 'de3829d7d755bdec0ba42d9ba27990e'; // Your TMDb v3 API Key
+const TMDB_API_KEY = 'de3829d7d755bdec0ba42d9ba27990e';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
 
@@ -32,7 +32,11 @@ const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w500';
    ✅ AWS S3 CONFIG
    ========================= */
 const s3 = new S3Client({
-    region: 'us-east-1' // Uses IAM Role attached to EC2
+    region: 'us-east-1',
+    credentials: {
+        accessKeyId: 'YOUR_AWS_ACCESS_KEY_ID',
+        secretAccessKey: 'YOUR_AWS_SECRET_ACCESS_KEY'
+    }
 });
 
 const BUCKET_NAME = 'movie-posters-bucket-aws';
@@ -41,40 +45,51 @@ const BUCKET_NAME = 'movie-posters-bucket-aws';
    ✅ Upload Poster to S3
    ========================= */
 async function uploadPosterToS3(posterPath, title, index) {
-    const imageUrl = `${TMDB_IMAGE_BASE}${posterPath}`;
-    const response = await axios.get(imageUrl, {
-        responseType: 'arraybuffer'
-    });
+    try {
+        const imageUrl = `${TMDB_IMAGE_BASE}${posterPath}`;
+        const response = await axios.get(imageUrl, {
+            responseType: 'arraybuffer'
+        });
 
-    const fileName = `${title.replace(/\s+/g, '_')}_${index}.jpg`;
+        const fileName = `${title.replace(/\s+/g, '_')}_${index}.jpg`;
 
-    await s3.send(new PutObjectCommand({
-        Bucket: BUCKET_NAME,
-        Key: fileName,
-        Body: response.data,
-        ContentType: 'image/jpeg'
-    }));
+        await s3.send(new PutObjectCommand({
+            Bucket: BUCKET_NAME,
+            Key: fileName,
+            Body: response.data,
+            ContentType: 'image/jpeg'
+        }));
 
-    return `https://${BUCKET_NAME}.s3.us-east-1.amazonaws.com/${fileName}`;
+        return `https://${BUCKET_NAME}.s3.us-east-1.amazonaws.com/${fileName}`;
+    } catch (error) {
+        console.error("Error uploading to S3:", error.message);
+        return null;
+    }
 }
 
 /* =========================
    🎬 GET MOVIE ENDPOINT
    ========================= */
 app.get('/movie', async (req, res) => {
-    const name = req.query.name;
+    const name = req.query.name?.trim();
 
     if (!name) {
-        return res.status(400).json({ message: "Please provide movie name" });
+        return res.status(400).json({
+            success: false,
+            message: "Please provide a movie name",
+            posters: []
+        });
     }
 
     try {
-        // 1️⃣ Check if movie exists in RDS
+        console.log(`Searching for movie: ${name}`);
+
+        /* 1️⃣ Check if movie exists in RDS */
         const [rows] = await db.promise().query(
             `SELECT m.*, p.poster_url
              FROM movies m
              LEFT JOIN posters p ON m.id = p.movie_id
-             WHERE m.title LIKE ?`,
+             WHERE LOWER(m.title) LIKE LOWER(?)`,
             [`%${name}%`]
         );
 
@@ -93,10 +108,14 @@ app.get('/movie', async (req, res) => {
                     .filter(r => r.poster_url)
                     .map(r => r.poster_url)
             };
-            return res.json(movie);
+
+            console.log(`Movie found in database: ${movie.title}`);
+            return res.status(200).json(movie);
         }
 
-        // 2️⃣ Search movie in TMDb
+        console.log(`Movie not found in DB. Fetching from TMDb...`);
+
+        /* 2️⃣ Search movie in TMDb */
         const searchRes = await axios.get(`${TMDB_BASE_URL}/search/movie`, {
             params: {
                 api_key: TMDB_API_KEY,
@@ -105,12 +124,16 @@ app.get('/movie', async (req, res) => {
         });
 
         if (!searchRes.data.results.length) {
-            return res.status(404).json({ message: "Movie not found" });
+            return res.status(404).json({
+                success: false,
+                message: "Movie not found",
+                posters: []
+            });
         }
 
         const movieId = searchRes.data.results[0].id;
 
-        // 3️⃣ Fetch movie details with images and credits
+        /* 3️⃣ Fetch movie details with images and credits */
         const detailsRes = await axios.get(`${TMDB_BASE_URL}/movie/${movieId}`, {
             params: {
                 api_key: TMDB_API_KEY,
@@ -118,56 +141,72 @@ app.get('/movie', async (req, res) => {
             }
         });
 
-        const movie = detailsRes.data;
+        const movieData = detailsRes.data;
 
-        // Extract required details
-        const director = movie.credits.crew.find(c => c.job === 'Director')?.name || 'N/A';
-        const cast = movie.credits.cast.slice(0, 5).map(c => c.name).join(', ');
-        const genre = movie.genres.map(g => g.name).join(', ');
-        const duration = movie.runtime ? `${movie.runtime} min` : 'N/A';
-        const releaseYear = movie.release_date ? movie.release_date.split('-')[0] : 'N/A';
-        const rating = movie.vote_average || 'N/A';
+        const director = movieData.credits.crew.find(c => c.job === 'Director')?.name || 'N/A';
+        const cast = movieData.credits.cast.slice(0, 5).map(c => c.name).join(', ');
+        const genre = movieData.genres.map(g => g.name).join(', ');
+        const duration = movieData.runtime ? `${movieData.runtime} min` : 'N/A';
+        const releaseYear = movieData.release_date
+            ? movieData.release_date.split('-')[0]
+            : 'N/A';
+        const rating = movieData.vote_average || 'N/A';
 
-        // 4️⃣ Get up to 4 posters and upload to S3
-        const posters = movie.images.posters.slice(0, 4);
+        /* 4️⃣ Upload up to 4 posters to S3 */
+        const posters = movieData.images?.posters?.slice(0, 4) || [];
         const posterUrls = [];
 
         for (let i = 0; i < posters.length; i++) {
-            const url = await uploadPosterToS3(posters[i].file_path, movie.title, i + 1);
-            posterUrls.push(url);
+            const url = await uploadPosterToS3(
+                posters[i].file_path,
+                movieData.title,
+                i + 1
+            );
+            if (url) posterUrls.push(url);
         }
 
-        // 5️⃣ Insert movie into database
-        const [insertResult] = await db.promise().query(
-            `INSERT INTO movies (title, description, release_year, rating, director, cast, genre, duration)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [
-                movie.title,
-                movie.overview,
-                releaseYear,
-                rating,
-                director,
-                cast,
-                genre,
-                duration
-            ]
+        /* 5️⃣ Prevent duplicate movie entries */
+        const [existingMovie] = await db.promise().query(
+            `SELECT id FROM movies WHERE LOWER(title) = LOWER(?)`,
+            [movieData.title]
         );
 
-        const newMovieId = insertResult.insertId;
+        let movieIdInDb;
 
-        // 6️⃣ Insert poster URLs into posters table
+        if (existingMovie.length > 0) {
+            movieIdInDb = existingMovie[0].id;
+        } else {
+            const [insertResult] = await db.promise().query(
+                `INSERT INTO movies 
+                (title, description, release_year, rating, director, cast, genre, duration)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    movieData.title,
+                    movieData.overview,
+                    releaseYear,
+                    rating,
+                    director,
+                    cast,
+                    genre,
+                    duration
+                ]
+            );
+            movieIdInDb = insertResult.insertId;
+        }
+
+        /* 6️⃣ Insert poster URLs */
         for (const url of posterUrls) {
             await db.promise().query(
                 `INSERT INTO posters (movie_id, poster_url) VALUES (?, ?)`,
-                [newMovieId, url]
+                [movieIdInDb, url]
             );
         }
 
-        // 7️⃣ Send response to frontend
-        res.status(201).json({
-            id: newMovieId,
-            title: movie.title,
-            description: movie.overview,
+        /* 7️⃣ Send response to frontend */
+        return res.status(200).json({
+            id: movieIdInDb,
+            title: movieData.title,
+            description: movieData.overview,
             release_year: releaseYear,
             rating: rating,
             director: director,
@@ -179,13 +218,18 @@ app.get('/movie', async (req, res) => {
 
     } catch (error) {
         console.error("Server Error:", error.response?.data || error.message);
-        res.status(500).json({ error: "Internal server error" });
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error",
+            posters: []
+        });
     }
 });
 
 /* =========================
    🚀 START SERVER
    ========================= */
-app.listen(3000, () => {
-    console.log("Server running on port 3000");
+const PORT = 3000;
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
 });
